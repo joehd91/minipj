@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minipj-back
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minipj-back
+  template:
+    metadata:
+      labels:
+        app: minipj-back
+    spec:
+      nodeSelector:
+        "beta.kubernetes.io/os": linux
+      containers:
+      - name: minipj-back
+        image: minipj-back:v1
+        env:
+        - name: ALLOW_EMPTY_PASSWORD
+          value: "yes"
+        ports:
+        - containerPort: 8090
+          name: redis
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minipj-back
+spec:
+  ports:
+  - port: 8090
+  selector:
+    app: minipj-back
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minipj-front
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minipj-front
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  minReadySeconds: 5 
+  template:
+    metadata:
+      labels:
+        app: minipj-front
+    spec:
+      nodeSelector:
+        "beta.kubernetes.io/os": linux
+      containers:
+      - name: azure-vote-front
+        image: minipj-front:v1
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: 250m
+          limits:
+            cpu: 500m
+        env:
+        - name: board
+          value: "minipj"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minipj-front
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 8080
+  selector:
+    app: minipj-front
