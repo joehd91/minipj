@@ -1,0 +1,20 @@
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+  name: "board-app-deploy"
+  namespace: minipj
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: "app"
+  template:
+    metadata:
+      labels:
+        app: "app"
+    spec:
+      containers:
+        - name: "board-app"
+          image: "minipj.azurecr.io/board-app"
+          ports:
+          - containerPort: 80

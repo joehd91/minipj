@@ -1,0 +1,132 @@
+# ========= Mini Project with GitHub ===============================================
+#    Name    : Demo for Mini Project with GitHub
+#    Date    : 2023.01.06
+#    Author  : 장현덕
+#    Update  : 
+# ===============================================================================
+
+# -------------------------------------------------------------------------------
+# Note
+# -------------------------------------------------------------------------------
+# * GitHub Repository Secrets List
+# - AZURE_CREDENTIALS
+# - REGISTRY_LOGIN_SERVER
+# - REGISTRY_USERNAME
+# - REGISTRY_PASSWORD
+#
+# * Create Namespace
+# kubectl create ns minipj
+#
+# * Create Secrets in AKS
+# kubectl create secret docker-registry secret-for-acr \
+#     --namespace minipj \
+#     --docker-server=minipj.azurecr.io \
+#     --docker-username=minipj \
+#     --docker-password=aubOni31LtCTld9rPgpxjcSjbXVD/axUMPtg8jQAxp+ACRAPUTo+
+#
+# * Create Service Principal
+# az ad sp create-for-rbac \
+# --role="Contributor" \
+# --scopes="/subscriptions/[구독 ID]/resourcegroups/[리소스 그룹 명]" \
+# --name=[서비스 주체 명] \
+# --years 1 \
+# --sdk-auth
+#
+# az ad sp create-for-rbac \
+# --role="Contributor" \
+# --scopes="/subscriptions/82697734-79a9-4155-8d33-7eac9d348041/resourcegroups/minipj-rg" \
+# --name=MINIPJ-SP \
+# --years 1 \
+# --sdk-auth
+#
+
+name: 'Mini-Project-Pipeline'
+
+on:
+  push:
+    paths:
+      - 'board-api/**'
+      - 'k8s_manifests/api/**'
+    branches: [ "main" ]
+
+env:
+  # app env
+  WORKING_DIR: 'src/board-api'
+  
+  # azure env
+  AZURE_RG: 'minipj-rg'
+  ACR_NAME: 'minipj'
+  SECRET: 'secret-for-acr'
+  AKS_CLUSTER: 'minipj-aks'
+  NAMESPACE: 'minipj'
+  APP_NAME: 'board-api'
+
+# ==================================================================
+#  Deployment
+# ==================================================================
+
+jobs:
+  build-and-push-to-acr:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 'Checkout Source Code'
+      uses: actions/checkout@v2
+    
+    - name: 'Azure Container Registry Login'
+      uses: Azure/docker-login@v1
+      with:
+        login-server: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+        username: ${{ secrets.REGISTRY_USERNAME }} 
+        password: ${{ secrets.REGISTRY_PASSWORD }} 
+
+    - run: |
+        echo 'Start Build and Push to ACR'
+        
+        cd src/board-api
+        mvn compile jib:build -Djib.to.tags=${{ github.sha }}
+        
+        echo 'Complete Build and Push to ACR'
+     
+  deploy-to-aks:
+    needs: build-and-push-to-acr
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 'Checkout Source Code'
+      uses: actions/checkout@v2
+    
+    # Set the target Azure Kubernetes Service (AKS) cluster. 
+    - name: 'AKS Credential'
+      uses: azure/aks-set-context@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        cluster-name: ${{ env.AKS_CLUSTER }}
+        resource-group: ${{ env.AZURE_RG }}
+        
+    # Create namespace if doesn't exist
+    - run: |
+        kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o json | kubectl apply -f -
+    # Create image pull secret for ACR
+    - name: 'Create Image Pull Secret for ACR'
+      uses: azure/k8s-create-secret@v1
+      with:
+        container-registry-url: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+        container-registry-username: ${{ secrets.REGISTRY_USERNAME }}
+        container-registry-password: ${{ secrets.REGISTRY_PASSWORD }}
+        secret-name: ${{ env.SECRET }}
+        namespace: ${{ env.NAMESPACE }}
+        arguments: --force true
+    
+    # Deploy app to AKS
+    - name: 'Deploy to Azure Kubernetes Service'
+      uses: azure/k8s-deploy@v1
+      with:
+        manifests: |
+          manifests/api/api-deploy.yml
+          manifests/api/api-svc.yml
+        images: |
+          ${{ secrets.REGISTRY_LOGIN_SERVER }}/${{ env.APP_NAME }}:${{ github.sha }}
+        imagepullsecrets: |
+          ${{ env.SECRET }}
+        namespace: ${{ env.NAMESPACE }}

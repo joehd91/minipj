@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+    name: "app-public-svc"
+    namespace: minipj
+spec:
+    type: LoadBalancer
+    ports:
+    - port: 80
+    selector:
+        app: "app"
